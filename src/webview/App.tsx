@@ -110,7 +110,7 @@ export function App() {
             details={details}
             loading={detailsLoading}
           />
-          {details && <DiffViewer patch={details.patchRaw} />}
+          {details && <DiffViewer diff={details.diff} patch={details.patchRaw} />}
         </section>
       </div>
     </div>

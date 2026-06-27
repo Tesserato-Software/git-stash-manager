@@ -30,6 +30,48 @@ export type GitStashDetails = {
   patchRaw: string;
   /** Parsed changed files; falls back to raw lines when parsing is incomplete. */
   files: GitStashChangedFile[];
+  /** Structured diff parsed from `patchRaw`, ready for side-by-side rendering. */
+  diff: ParsedDiff;
+};
+
+// Structured diff types used to render a side-by-side (split) view.
+
+export type DiffCellType = "context" | "addition" | "deletion";
+
+export type DiffCell = {
+  /** 1-based line number within the old (left) or new (right) file. */
+  lineNumber: number;
+  type: DiffCellType;
+  content: string;
+};
+
+/**
+ * One aligned row of a split diff. A deletion sits on the left, an addition on
+ * the right; context lines fill both sides. Either side may be absent when the
+ * change adds or removes more lines than the other side has.
+ */
+export type SplitDiffRow = {
+  left?: DiffCell;
+  right?: DiffCell;
+};
+
+export type DiffHunk = {
+  /** Full `@@ ... @@` header line. */
+  header: string;
+  /** Optional section heading Git appends after the `@@` markers. */
+  heading: string;
+  rows: SplitDiffRow[];
+};
+
+export type DiffFile = {
+  oldPath?: string;
+  newPath?: string;
+  isBinary?: boolean;
+  hunks: DiffHunk[];
+};
+
+export type ParsedDiff = {
+  files: DiffFile[];
 };
 
 // Typed message contract between the webview and the extension host.
