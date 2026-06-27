@@ -14,7 +14,9 @@ state.
 - List all stashes in the current workspace (`git stash list`).
 - Show stash metadata: reference, branch, and message.
 - Inspect a stash's changed files (`git stash show <ref> --stat`).
-- Preview the full diff (`git stash show <ref> --patch`).
+- Preview the full diff (`git stash show <ref> --patch`) in an intuitive
+  **side-by-side (split) view** — old version on the left, new on the right,
+  with line numbers — or switch to a raw unified view.
 - Refresh, filter, and clear loading/empty/error states.
 
 ## Architecture
@@ -35,7 +37,8 @@ src/
 │  ├─ extension.ts            # activate / command registration
 │  ├─ git/
 │  │  ├─ gitService.ts        # execFile-based Git runner + commands
-│  │  └─ stashParser.ts       # pure parsers for list / --stat
+│  │  ├─ stashParser.ts       # pure parsers for list / --stat
+│  │  └─ diffParser.ts        # unified patch -> structured split-diff rows
 │  ├─ webview/
 │  │  ├─ StashManagerPanel.ts # webview lifecycle + message handling
 │  │  └─ getWebviewHtml.ts    # CSP-scoped HTML shell
