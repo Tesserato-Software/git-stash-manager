@@ -23,21 +23,30 @@ test("parses a file path and a single hunk", () => {
   assert.equal(file.hunks[0].heading, "export function App() {");
 });
 
-test("pairs a deletion with an addition on the same row", () => {
-  const diff = parseUnifiedDiff(SAMPLE);
-  const rows = diff.files[0].hunks[0].rows;
+test("keeps lines in order with old/new line numbers", () => {
+  const lines = parseUnifiedDiff(SAMPLE).files[0].hunks[0].lines;
 
-  // context, paired change, context
-  assert.equal(rows.length, 3);
-  assert.deepEqual(rows[0].left, { lineNumber: 1, type: "context", content: "const a = 1;" });
-  assert.equal(rows[1].left?.type, "deletion");
-  assert.equal(rows[1].left?.content, "const b = 2;");
-  assert.equal(rows[1].right?.type, "addition");
-  assert.equal(rows[1].right?.content, "const b = 3;");
-  assert.equal(rows[2].right?.lineNumber, 3);
+  assert.deepEqual(
+    lines.map((l) => l.type),
+    ["context", "deletion", "addition", "context"]
+  );
+  assert.deepEqual(lines[0], {
+    type: "context",
+    content: "const a = 1;",
+    oldLine: 1,
+    newLine: 1
+  });
+  assert.equal(lines[1].type, "deletion");
+  assert.equal(lines[1].oldLine, 2);
+  assert.equal(lines[1].newLine, undefined);
+  assert.equal(lines[2].type, "addition");
+  assert.equal(lines[2].newLine, 2);
+  assert.equal(lines[2].oldLine, undefined);
+  assert.equal(lines[3].oldLine, 3);
+  assert.equal(lines[3].newLine, 3);
 });
 
-test("pads the shorter side when additions and deletions differ in count", () => {
+test("handles additions and deletions of differing counts", () => {
   const patch = `diff --git a/f.txt b/f.txt
 --- a/f.txt
 +++ b/f.txt
@@ -47,20 +56,13 @@ test("pads the shorter side when additions and deletions differ in count", () =>
 +new two
 +new three
 `;
-  const rows = parseUnifiedDiff(patch).files[0].hunks[0].rows;
-  assert.equal(rows.length, 3);
-  assert.equal(rows[0].left?.content, "old");
-  assert.equal(rows[0].right?.content, "new one");
-  assert.equal(rows[1].left, undefined);
-  assert.equal(rows[1].right?.content, "new two");
-  assert.equal(rows[2].left, undefined);
-  assert.equal(rows[2].right?.content, "new three");
-});
-
-test("tracks old and new line numbers independently", () => {
-  const rows = parseUnifiedDiff(SAMPLE).files[0].hunks[0].rows;
-  assert.equal(rows[1].left?.lineNumber, 2);
-  assert.equal(rows[1].right?.lineNumber, 2);
+  const lines = parseUnifiedDiff(patch).files[0].hunks[0].lines;
+  assert.deepEqual(
+    lines.map((l) => l.type),
+    ["deletion", "addition", "addition", "addition"]
+  );
+  assert.equal(lines[3].content, "new three");
+  assert.equal(lines[3].newLine, 3);
 });
 
 test("marks added and removed files via /dev/null", () => {
@@ -74,7 +76,8 @@ new file mode 100644
   const file = parseUnifiedDiff(patch).files[0];
   assert.equal(file.oldPath, undefined);
   assert.equal(file.newPath, "new.txt");
-  assert.equal(file.hunks[0].rows[0].right?.content, "hello");
+  assert.equal(file.hunks[0].lines[0].content, "hello");
+  assert.equal(file.hunks[0].lines[0].newLine, 1);
 });
 
 test("flags binary files", () => {
@@ -85,6 +88,19 @@ Binary files a/img.png and b/img.png differ
   const file = parseUnifiedDiff(patch).files[0];
   assert.equal(file.isBinary, true);
   assert.equal(file.hunks.length, 0);
+});
+
+test("parses multiple files in one patch", () => {
+  const patch = `${SAMPLE}diff --git a/b.ts b/b.ts
+--- a/b.ts
++++ b/b.ts
+@@ -1 +1 @@
+-x
++y
+`;
+  const diff = parseUnifiedDiff(patch);
+  assert.equal(diff.files.length, 2);
+  assert.equal(diff.files[1].newPath, "b.ts");
 });
 
 test("returns no files for an empty patch", () => {

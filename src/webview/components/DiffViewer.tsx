@@ -1,24 +1,53 @@
-import { useMemo, useState } from "react";
-import type {
-  DiffCell,
-  DiffFile,
-  ParsedDiff,
-  SplitDiffRow
-} from "../../extension/types/stash";
+import { Fragment, useMemo, useState } from "react";
+import { parseUnifiedDiff } from "../../extension/git/diffParser";
+import type { DiffFile, DiffLine } from "../../extension/types/stash";
 
 interface DiffViewerProps {
-  diff?: ParsedDiff;
-  /** Raw patch, used for the fallback "Raw" view. */
+  /** Raw patch from `git stash show <ref> --patch`. Parsed here for rendering. */
   patch: string;
 }
 
-type ViewMode = "split" | "raw";
+type ViewMode = "split" | "unified";
 
-// Rendering a split diff builds several DOM nodes per line, so large files are
+// Rendering a diff builds several DOM nodes per line, so large files are
 // collapsed by default and very large ones require an explicit confirmation to
 // avoid freezing the webview.
-const COLLAPSE_ABOVE_ROWS = 400;
-const REQUIRE_CONFIRM_ABOVE_ROWS = 4000;
+const COLLAPSE_ABOVE_LINES = 400;
+const REQUIRE_CONFIRM_ABOVE_LINES = 4000;
+
+interface PairedRow {
+  left?: DiffLine;
+  right?: DiffLine;
+}
+
+/** Pair deletions with additions row by row for the side-by-side view. */
+function toPairedRows(lines: DiffLine[]): PairedRow[] {
+  const rows: PairedRow[] = [];
+  let deletions: DiffLine[] = [];
+  let additions: DiffLine[] = [];
+
+  const flush = () => {
+    const count = Math.max(deletions.length, additions.length);
+    for (let i = 0; i < count; i++) {
+      rows.push({ left: deletions[i], right: additions[i] });
+    }
+    deletions = [];
+    additions = [];
+  };
+
+  for (const line of lines) {
+    if (line.type === "deletion") {
+      deletions.push(line);
+    } else if (line.type === "addition") {
+      additions.push(line);
+    } else {
+      flush();
+      rows.push({ left: line, right: line });
+    }
+  }
+  flush();
+  return rows;
+}
 
 function fileLabel(file: DiffFile): string {
   const { oldPath, newPath } = file;
@@ -28,67 +57,106 @@ function fileLabel(file: DiffFile): string {
   return newPath ?? oldPath ?? "(unknown file)";
 }
 
-function fileStats(file: DiffFile): { added: number; removed: number; rows: number } {
+function fileStats(file: DiffFile): { added: number; removed: number; lines: number } {
   let added = 0;
   let removed = 0;
-  let rows = 0;
+  let lines = 0;
   for (const hunk of file.hunks) {
-    rows += hunk.rows.length;
-    for (const row of hunk.rows) {
-      if (row.left?.type === "deletion") {
-        removed++;
-      }
-      if (row.right?.type === "addition") {
+    for (const line of hunk.lines) {
+      lines++;
+      if (line.type === "addition") {
         added++;
+      } else if (line.type === "deletion") {
+        removed++;
       }
     }
   }
-  return { added, removed, rows };
+  return { added, removed, lines };
 }
 
-function cellClass(cell?: DiffCell): string {
-  if (!cell) {
+function cellClass(line?: DiffLine): string {
+  if (!line) {
     return "diff__cell diff__cell--empty";
   }
-  return `diff__cell diff__cell--${cell.type}`;
+  return `diff__cell diff__cell--${line.type}`;
 }
 
-function SplitRow({ row }: { row: SplitDiffRow }) {
+function sign(type: DiffLine["type"]): string {
+  if (type === "addition") return "+";
+  if (type === "deletion") return "-";
+  return " ";
+}
+
+function UnifiedBody({ file }: { file: DiffFile }) {
   return (
-    <tr className="diff__row">
-      <td className="diff__gutter">{row.left?.lineNumber ?? ""}</td>
-      <td className={cellClass(row.left)}>
-        <span className="diff__sign">{row.left?.type === "deletion" ? "-" : " "}</span>
-        {row.left?.content ?? ""}
-      </td>
-      <td className="diff__gutter">{row.right?.lineNumber ?? ""}</td>
-      <td className={cellClass(row.right)}>
-        <span className="diff__sign">{row.right?.type === "addition" ? "+" : " "}</span>
-        {row.right?.content ?? ""}
-      </td>
-    </tr>
+    <div className="diff__scroll">
+      <table className="diff__table">
+        <tbody>
+          {file.hunks.map((hunk, hunkIndex) => (
+            <Fragment key={hunkIndex}>
+              <tr className="diff__hunk-heading">
+                <td colSpan={3}>{hunk.header}</td>
+              </tr>
+              {hunk.lines.map((line, lineIndex) => (
+                <tr key={lineIndex} className={`diff__line-row diff__line-row--${line.type}`}>
+                  <td className="diff__gutter">{line.oldLine ?? ""}</td>
+                  <td className="diff__gutter">{line.newLine ?? ""}</td>
+                  <td className="diff__code">
+                    <span className="diff__sign">{sign(line.type)}</span>
+                    {line.content}
+                  </td>
+                </tr>
+              ))}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function Hunk({ heading, rows }: { heading: string; rows: SplitDiffRow[] }) {
+function SplitBody({ file }: { file: DiffFile }) {
   return (
-    <>
-      <tr className="diff__hunk-heading">
-        <td colSpan={4}>{heading || "…"}</td>
-      </tr>
-      {rows.map((row, index) => (
-        <SplitRow key={index} row={row} />
-      ))}
-    </>
+    <div className="diff__scroll">
+      <table className="diff__table">
+        <tbody>
+          {file.hunks.map((hunk, hunkIndex) => (
+            <Fragment key={hunkIndex}>
+              <tr className="diff__hunk-heading">
+                <td colSpan={4}>{hunk.header}</td>
+              </tr>
+              {toPairedRows(hunk.lines).map((row, rowIndex) => (
+                <tr key={rowIndex} className="diff__row">
+                  <td className="diff__gutter">{row.left?.oldLine ?? ""}</td>
+                  <td className={cellClass(row.left)}>
+                    <span className="diff__sign">
+                      {row.left?.type === "deletion" ? "-" : " "}
+                    </span>
+                    {row.left?.content ?? ""}
+                  </td>
+                  <td className="diff__gutter">{row.right?.newLine ?? ""}</td>
+                  <td className={cellClass(row.right)}>
+                    <span className="diff__sign">
+                      {row.right?.type === "addition" ? "+" : " "}
+                    </span>
+                    {row.right?.content ?? ""}
+                  </td>
+                </tr>
+              ))}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function FileBlock({ file }: { file: DiffFile }) {
+function FileBlock({ file, mode }: { file: DiffFile; mode: ViewMode }) {
   const stats = useMemo(() => fileStats(file), [file]);
-  const [expanded, setExpanded] = useState(stats.rows <= COLLAPSE_ABOVE_ROWS);
+  const [expanded, setExpanded] = useState(stats.lines <= COLLAPSE_ABOVE_LINES);
   const [confirmed, setConfirmed] = useState(false);
 
-  const needsConfirm = stats.rows > REQUIRE_CONFIRM_ABOVE_ROWS;
+  const needsConfirm = stats.lines > REQUIRE_CONFIRM_ABOVE_LINES;
 
   return (
     <div className="diff__file">
@@ -112,67 +180,36 @@ function FileBlock({ file }: { file: DiffFile }) {
         ) : needsConfirm && !confirmed ? (
           <div className="diff__large">
             <p className="muted">
-              This file is large ({stats.rows.toLocaleString()} lines). Rendering it
-              side by side may be slow.
+              This file is large ({stats.lines.toLocaleString()} lines). Rendering it
+              may be slow.
             </p>
             <button className="button" onClick={() => setConfirmed(true)}>
               Render anyway
             </button>
           </div>
+        ) : mode === "split" ? (
+          <SplitBody file={file} />
         ) : (
-          <div className="diff__scroll">
-            <table className="diff__table">
-              <tbody>
-                {file.hunks.map((hunk, index) => (
-                  <Hunk key={index} heading={hunk.heading} rows={hunk.rows} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <UnifiedBody file={file} />
         ))}
     </div>
   );
 }
 
-function SplitDiff({ files }: { files: DiffFile[] }) {
-  if (files.length === 0) {
-    return <p className="muted">No textual changes to display.</p>;
-  }
-  return (
-    <div className="diff__files">
-      {files.map((file, index) => (
-        <FileBlock key={index} file={file} />
-      ))}
-    </div>
-  );
-}
-
-function RawDiff({ patch }: { patch: string }) {
-  const lines = patch.replace(/\n+$/, "").split("\n");
-  const classify = (line: string): string => {
-    if (line.startsWith("@@")) return "hunk";
-    if (/^(diff |index |--- |\+\+\+ )/.test(line)) return "meta";
-    if (line.startsWith("+")) return "addition";
-    if (line.startsWith("-")) return "deletion";
-    return "context";
-  };
-  return (
-    <pre className="diff__raw">
-      {lines.map((line, index) => (
-        <div key={index} className={`diff__line diff__line--${classify(line)}`}>
-          {line || " "}
-        </div>
-      ))}
-    </pre>
-  );
-}
-
-export function DiffViewer({ diff, patch }: DiffViewerProps) {
+export function DiffViewer({ patch }: DiffViewerProps) {
   const [mode, setMode] = useState<ViewMode>("split");
-  const files = diff?.files ?? [];
+  const parsed = useMemo(() => parseUnifiedDiff(patch), [patch]);
 
-  if (files.length === 0 && patch.trim() === "") {
-    return null;
+  if (parsed.files.length === 0) {
+    if (patch.trim() === "") {
+      return null;
+    }
+    return (
+      <div className="diff">
+        <h3 className="details__heading">Diff preview</h3>
+        <p className="muted">No textual changes to display.</p>
+      </div>
+    );
   }
 
   return (
@@ -187,14 +224,18 @@ export function DiffViewer({ diff, patch }: DiffViewerProps) {
             Split
           </button>
           <button
-            className={`toggle__btn${mode === "raw" ? " toggle__btn--active" : ""}`}
-            onClick={() => setMode("raw")}
+            className={`toggle__btn${mode === "unified" ? " toggle__btn--active" : ""}`}
+            onClick={() => setMode("unified")}
           >
-            Raw
+            Unified
           </button>
         </div>
       </div>
-      {mode === "split" ? <SplitDiff files={files} /> : <RawDiff patch={patch} />}
+      <div className="diff__files">
+        {parsed.files.map((file, index) => (
+          <FileBlock key={index} file={file} mode={mode} />
+        ))}
+      </div>
     </div>
   );
 }
