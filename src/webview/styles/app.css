@@ -345,33 +345,20 @@ body {
   background: var(--vscode-diffEditor-unchangedRegionBackground, rgba(128, 128, 128, 0.06));
 }
 
-.diff__raw {
-  margin: 8px 0 0;
-  padding: 8px;
-  overflow-x: auto;
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: var(--vscode-editor-font-size, 12px);
-  line-height: 1.45;
-  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.1));
-  border-radius: 3px;
-}
+/* Unified (GitHub-style) view: two line-number gutters + a single code column. */
 
-.diff__line {
+.diff__code {
+  padding: 0 8px 0 0;
   white-space: pre;
+  vertical-align: top;
 }
 
-.diff__line--addition {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #4caf50);
+.diff__line-row--addition .diff__code,
+.diff__line-row--addition .diff__gutter {
+  background: var(--vscode-diffEditor-insertedTextBackground, rgba(76, 175, 80, 0.18));
 }
 
-.diff__line--deletion {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, #f44336);
-}
-
-.diff__line--hunk {
-  color: var(--vscode-textLink-foreground, #569cd6);
-}
-
-.diff__line--meta {
-  color: var(--vscode-descriptionForeground);
+.diff__line-row--deletion .diff__code,
+.diff__line-row--deletion .diff__gutter {
+  background: var(--vscode-diffEditor-removedTextBackground, rgba(244, 67, 54, 0.18));
 }

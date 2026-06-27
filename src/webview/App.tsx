@@ -112,7 +112,7 @@ export function App() {
               details={details}
               loading={detailsLoading}
             />
-            {details && <DiffViewer diff={details.diff} patch={details.patchRaw} />}
+            {details && <DiffViewer patch={details.patchRaw} />}
           </ErrorBoundary>
         </section>
       </div>

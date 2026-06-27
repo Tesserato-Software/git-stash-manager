@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { GitStashDetails, GitStashEntry } from "../types/stash";
-import { parseUnifiedDiff } from "./diffParser";
 import { isValidStashRef, parseStashList, parseStashStat } from "./stashParser";
 
 const execFileAsync = promisify(execFile);
@@ -72,7 +71,6 @@ export async function getStashDetails(ref: string, cwd: string): Promise<GitStas
     ref,
     statRaw,
     patchRaw,
-    files: parseStashStat(statRaw),
-    diff: parseUnifiedDiff(patchRaw)
+    files: parseStashStat(statRaw)
   };
 }

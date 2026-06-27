@@ -1,8 +1,9 @@
-import type { DiffCell, DiffFile, DiffHunk, ParsedDiff, SplitDiffRow } from "../types/stash";
+import type { DiffFile, DiffHunk, ParsedDiff } from "../types/stash";
 
 // Parse a unified diff (as produced by `git stash show <ref> --patch`) into a
-// structured, side-by-side friendly shape. Deletions are paired with additions
-// row by row so the webview can render old and new versions aligned.
+// structured shape. Lines are kept in their original order, each tagged with
+// its old/new line numbers, so the webview can render either a unified or a
+// side-by-side view from the same data.
 
 const DIFF_GIT = /^diff --git a\/(.+?) b\/(.+)$/;
 const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/;
@@ -17,39 +18,15 @@ export function parseUnifiedDiff(patch: string): ParsedDiff {
   let hunk: DiffHunk | undefined;
   let oldLine = 0;
   let newLine = 0;
-  let pendingDeletions: DiffCell[] = [];
-  let pendingAdditions: DiffCell[] = [];
-
-  /** Emit buffered deletions/additions as aligned rows, padding the shorter side. */
-  const flushPending = () => {
-    if (!hunk) {
-      return;
-    }
-    const count = Math.max(pendingDeletions.length, pendingAdditions.length);
-    for (let i = 0; i < count; i++) {
-      const row: SplitDiffRow = {};
-      if (pendingDeletions[i]) {
-        row.left = pendingDeletions[i];
-      }
-      if (pendingAdditions[i]) {
-        row.right = pendingAdditions[i];
-      }
-      hunk.rows.push(row);
-    }
-    pendingDeletions = [];
-    pendingAdditions = [];
-  };
 
   for (const line of patch.split(/\r?\n/)) {
     // Genuine blank context lines are encoded as a single space; a zero-length
-    // line is only the trailing element after the final newline (or padding in
-    // an empty patch), so it carries no diff content.
+    // line is only the trailing element after the final newline.
     if (line === "") {
       continue;
     }
 
     if (line.startsWith("diff --git")) {
-      flushPending();
       hunk = undefined;
       file = { hunks: [] };
       files.push(file);
@@ -83,11 +60,10 @@ export function parseUnifiedDiff(patch: string): ParsedDiff {
     }
 
     if (line.startsWith("@@")) {
-      flushPending();
       const match = line.match(HUNK_HEADER);
       oldLine = match ? Number.parseInt(match[1], 10) : 0;
       newLine = match ? Number.parseInt(match[2], 10) : 0;
-      hunk = { header: line, heading: match ? match[3].trim() : "", rows: [] };
+      hunk = { header: line, heading: match ? match[3].trim() : "", lines: [] };
       file.hunks.push(hunk);
       continue;
     }
@@ -105,19 +81,18 @@ export function parseUnifiedDiff(patch: string): ParsedDiff {
     const marker = line[0];
     const content = line.slice(1);
     if (marker === "+") {
-      pendingAdditions.push({ lineNumber: newLine++, type: "addition", content });
+      hunk.lines.push({ type: "addition", content, newLine: newLine++ });
     } else if (marker === "-") {
-      pendingDeletions.push({ lineNumber: oldLine++, type: "deletion", content });
+      hunk.lines.push({ type: "deletion", content, oldLine: oldLine++ });
     } else {
-      // Context line (leading space) — flush pending changes first to keep order.
-      flushPending();
-      hunk.rows.push({
-        left: { lineNumber: oldLine++, type: "context", content },
-        right: { lineNumber: newLine++, type: "context", content }
+      hunk.lines.push({
+        type: "context",
+        content,
+        oldLine: oldLine++,
+        newLine: newLine++
       });
     }
   }
 
-  flushPending();
   return { files };
 }
