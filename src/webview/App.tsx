@@ -5,6 +5,7 @@ import type {
   GitStashEntry
 } from "../extension/types/stash";
 import { DiffViewer } from "./components/DiffViewer";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { StashDetails } from "./components/StashDetails";
 import { StashList } from "./components/StashList";
 import { onMessage, postMessage } from "./vscodeApi";
@@ -105,12 +106,14 @@ export function App() {
           />
         </section>
         <section className="app__pane app__pane--details">
-          <StashDetails
-            stashRef={selectedRef}
-            details={details}
-            loading={detailsLoading}
-          />
-          {details && <DiffViewer diff={details.diff} patch={details.patchRaw} />}
+          <ErrorBoundary>
+            <StashDetails
+              stashRef={selectedRef}
+              details={details}
+              loading={detailsLoading}
+            />
+            {details && <DiffViewer diff={details.diff} patch={details.patchRaw} />}
+          </ErrorBoundary>
         </section>
       </div>
     </div>

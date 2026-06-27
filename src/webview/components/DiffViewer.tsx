@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   DiffCell,
   DiffFile,
@@ -7,12 +7,18 @@ import type {
 } from "../../extension/types/stash";
 
 interface DiffViewerProps {
-  diff: ParsedDiff;
+  diff?: ParsedDiff;
   /** Raw patch, used for the fallback "Raw" view. */
   patch: string;
 }
 
 type ViewMode = "split" | "raw";
+
+// Rendering a split diff builds several DOM nodes per line, so large files are
+// collapsed by default and very large ones require an explicit confirmation to
+// avoid freezing the webview.
+const COLLAPSE_ABOVE_ROWS = 400;
+const REQUIRE_CONFIRM_ABOVE_ROWS = 4000;
 
 function fileLabel(file: DiffFile): string {
   const { oldPath, newPath } = file;
@@ -20,6 +26,24 @@ function fileLabel(file: DiffFile): string {
     return `${oldPath} → ${newPath}`;
   }
   return newPath ?? oldPath ?? "(unknown file)";
+}
+
+function fileStats(file: DiffFile): { added: number; removed: number; rows: number } {
+  let added = 0;
+  let removed = 0;
+  let rows = 0;
+  for (const hunk of file.hunks) {
+    rows += hunk.rows.length;
+    for (const row of hunk.rows) {
+      if (row.left?.type === "deletion") {
+        removed++;
+      }
+      if (row.right?.type === "addition") {
+        added++;
+      }
+    }
+  }
+  return { added, removed, rows };
 }
 
 function cellClass(cell?: DiffCell): string {
@@ -46,34 +70,6 @@ function SplitRow({ row }: { row: SplitDiffRow }) {
   );
 }
 
-function SplitDiff({ diff }: { diff: ParsedDiff }) {
-  return (
-    <div className="diff__files">
-      {diff.files.map((file, fileIndex) => (
-        <div key={fileIndex} className="diff__file">
-          <div className="diff__file-header">
-            <span className="diff__file-path">{fileLabel(file)}</span>
-            {file.isBinary && <span className="diff__badge">binary</span>}
-          </div>
-          {file.isBinary ? (
-            <p className="muted diff__binary">Binary file — no text diff to show.</p>
-          ) : (
-            <div className="diff__scroll">
-              <table className="diff__table">
-                <tbody>
-                  {file.hunks.map((hunk, hunkIndex) => (
-                    <Hunk key={hunkIndex} heading={hunk.heading} rows={hunk.rows} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Hunk({ heading, rows }: { heading: string; rows: SplitDiffRow[] }) {
   return (
     <>
@@ -84,6 +80,70 @@ function Hunk({ heading, rows }: { heading: string; rows: SplitDiffRow[] }) {
         <SplitRow key={index} row={row} />
       ))}
     </>
+  );
+}
+
+function FileBlock({ file }: { file: DiffFile }) {
+  const stats = useMemo(() => fileStats(file), [file]);
+  const [expanded, setExpanded] = useState(stats.rows <= COLLAPSE_ABOVE_ROWS);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const needsConfirm = stats.rows > REQUIRE_CONFIRM_ABOVE_ROWS;
+
+  return (
+    <div className="diff__file">
+      <button
+        className="diff__file-header"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+      >
+        <span className="diff__chevron">{expanded ? "▾" : "▸"}</span>
+        <span className="diff__file-path">{fileLabel(file)}</span>
+        {file.isBinary && <span className="diff__badge">binary</span>}
+        <span className="diff__file-stats">
+          {stats.added > 0 && <span className="files__add">+{stats.added}</span>}
+          {stats.removed > 0 && <span className="files__del">-{stats.removed}</span>}
+        </span>
+      </button>
+
+      {expanded &&
+        (file.isBinary ? (
+          <p className="muted diff__binary">Binary file — no text diff to show.</p>
+        ) : needsConfirm && !confirmed ? (
+          <div className="diff__large">
+            <p className="muted">
+              This file is large ({stats.rows.toLocaleString()} lines). Rendering it
+              side by side may be slow.
+            </p>
+            <button className="button" onClick={() => setConfirmed(true)}>
+              Render anyway
+            </button>
+          </div>
+        ) : (
+          <div className="diff__scroll">
+            <table className="diff__table">
+              <tbody>
+                {file.hunks.map((hunk, index) => (
+                  <Hunk key={index} heading={hunk.heading} rows={hunk.rows} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function SplitDiff({ files }: { files: DiffFile[] }) {
+  if (files.length === 0) {
+    return <p className="muted">No textual changes to display.</p>;
+  }
+  return (
+    <div className="diff__files">
+      {files.map((file, index) => (
+        <FileBlock key={index} file={file} />
+      ))}
+    </div>
   );
 }
 
@@ -109,8 +169,9 @@ function RawDiff({ patch }: { patch: string }) {
 
 export function DiffViewer({ diff, patch }: DiffViewerProps) {
   const [mode, setMode] = useState<ViewMode>("split");
+  const files = diff?.files ?? [];
 
-  if (diff.files.length === 0 && patch.trim() === "") {
+  if (files.length === 0 && patch.trim() === "") {
     return null;
   }
 
@@ -133,7 +194,7 @@ export function DiffViewer({ diff, patch }: DiffViewerProps) {
           </button>
         </div>
       </div>
-      {mode === "split" ? <SplitDiff diff={diff} /> : <RawDiff patch={patch} />}
+      {mode === "split" ? <SplitDiff files={files} /> : <RawDiff patch={patch} />}
     </div>
   );
 }
