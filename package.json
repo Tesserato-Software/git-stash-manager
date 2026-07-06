@@ -3,8 +3,16 @@
   "displayName": "Git Stash Manager",
   "description": "A visual Git stash inspector for VS Code that helps you find, inspect, and understand stashes without leaving the editor.",
   "version": "0.1.0",
-  "publisher": "git-stash-manager",
+  "publisher": "git-stash-manager-official",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tesserato-Software/git-stash-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Tesserato-Software/git-stash-manager/issues"
+  },
+  "homepage": "https://github.com/Tesserato-Software/git-stash-manager#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
