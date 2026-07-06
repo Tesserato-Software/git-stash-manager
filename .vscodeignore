@@ -1,0 +1,24 @@
+# Source and tests — only the built `dist/` output ships
+src/**
+test/**
+
+# Build config
+tsconfig.base.json
+tsconfig.extension.json
+tsconfig.webview.json
+vite.config.ts
+.gitignore
+.vscodeignore
+
+# Project/planning docs (README, LICENSE, CHANGELOG are kept)
+planning.md
+ai-spec-kit.md
+
+# Dev artifacts
+node_modules/**
+**/*.map
+**/*.ts
+**/tsconfig.json
+*.vsix
+npm-debug.log*
+.vscode-test/**
