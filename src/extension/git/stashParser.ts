@@ -112,3 +112,14 @@ export function parseStashStat(output: string): GitStashChangedFile[] {
 export function isValidStashRef(ref: string): boolean {
   return /^stash@\{\d+\}$/.test(ref);
 }
+
+/**
+ * Detect whether Git output describes a merge conflict from `stash apply`/`pop`.
+ *
+ * A conflict is not a hard failure: Git applies the changes with conflict
+ * markers and exits non-zero. We must tell this apart from a genuine blocker
+ * (e.g. "Your local changes would be overwritten"), where nothing was applied.
+ */
+export function isMergeConflictOutput(text: string): boolean {
+  return /(^|\n)CONFLICT\b/i.test(text) || /Merge conflict/i.test(text);
+}

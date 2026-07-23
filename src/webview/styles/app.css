@@ -63,6 +63,23 @@ body {
   background: var(--vscode-button-hoverBackground);
 }
 
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.button--secondary {
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+}
+
+.button--secondary:hover {
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    var(--vscode-button-hoverBackground)
+  );
+}
+
 .app__error {
   margin: 10px 14px 0;
   padding: 8px 12px;
@@ -154,10 +171,29 @@ body {
   opacity: 0.9;
 }
 
+.details__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
 .details__ref {
-  margin: 0 0 12px;
+  margin: 0;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 1.05em;
+}
+
+.details__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.details__hint {
+  margin: 0 0 8px;
+  font-size: 0.9em;
 }
 
 .details__heading {

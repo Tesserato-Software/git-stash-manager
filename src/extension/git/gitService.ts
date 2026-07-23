@@ -1,7 +1,17 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { GitStashDetails, GitStashEntry } from "../types/stash";
-import { isValidStashRef, parseStashList, parseStashStat } from "./stashParser";
+import type {
+  GitStashDetails,
+  GitStashEntry,
+  StashActionKind,
+  StashActionResult
+} from "../types/stash";
+import {
+  isMergeConflictOutput,
+  isValidStashRef,
+  parseStashList,
+  parseStashStat
+} from "./stashParser";
 
 const execFileAsync = promisify(execFile);
 
@@ -73,4 +83,53 @@ export async function getStashDetails(ref: string, cwd: string): Promise<GitStas
     patchRaw,
     files: parseStashStat(statRaw)
   };
+}
+
+/** Apply a stash onto the working tree, keeping the stash (`git stash apply`). */
+export async function applyStash(ref: string, cwd: string): Promise<StashActionResult> {
+  return runStashApply("apply", ref, cwd);
+}
+
+/** Apply a stash and remove it if it applies cleanly (`git stash pop`). */
+export async function popStash(ref: string, cwd: string): Promise<StashActionResult> {
+  return runStashApply("pop", ref, cwd);
+}
+
+/**
+ * Run `git stash apply|pop <ref>`. A merge conflict is reported as a distinct,
+ * non-fatal outcome (the changes were applied with markers), while a genuine
+ * blocker — where Git applied nothing — surfaces as a GitError.
+ */
+async function runStashApply(
+  action: StashActionKind,
+  ref: string,
+  cwd: string
+): Promise<StashActionResult> {
+  if (!isValidStashRef(ref)) {
+    throw new GitError(`Invalid stash reference: ${ref}`);
+  }
+
+  try {
+    const { stdout, stderr } = await execFileAsync("git", ["stash", action, ref], {
+      cwd,
+      maxBuffer: 32 * 1024 * 1024
+    });
+    return { ref, action, outcome: "applied", output: `${stdout}${stderr}`.trim() };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    if (err.code === "ENOENT") {
+      throw new GitError(
+        "Git executable not found. Make sure Git is installed and available on your PATH."
+      );
+    }
+    const combined = `${err.stdout ?? ""}\n${err.stderr ?? ""}`;
+    if (isMergeConflictOutput(combined)) {
+      return { ref, action, outcome: "conflict", output: combined.trim() };
+    }
+    const stderr = typeof err.stderr === "string" ? err.stderr.trim() : "";
+    throw new GitError(
+      `Git command failed: git stash ${action} ${ref}`,
+      stderr || err.message
+    );
+  }
 }
