@@ -1,7 +1,15 @@
 import * as vscode from "vscode";
-import { GitError, getStashDetails, isGitRepository, listStashes } from "../git/gitService";
+import {
+  GitError,
+  applyStash,
+  getStashDetails,
+  isGitRepository,
+  listStashes,
+  popStash
+} from "../git/gitService";
 import type {
   ExtensionToWebviewMessage,
+  StashActionKind,
   WebviewToExtensionMessage
 } from "../types/stash";
 import { getWebviewHtml } from "./getWebviewHtml";
@@ -66,6 +74,12 @@ export class StashManagerPanel {
       case "selectStash":
         await this.loadStashDetails(message.ref);
         break;
+      case "applyStash":
+        await this.runStashAction(message.ref, "apply");
+        break;
+      case "popStash":
+        await this.runStashAction(message.ref, "pop");
+        break;
     }
   }
 
@@ -122,6 +136,57 @@ export class StashManagerPanel {
       const details = await getStashDetails(ref, cwd);
       this.post({ type: "stashDetailsLoaded", payload: details });
     } catch (error) {
+      this.reportError(error);
+    }
+  }
+
+  /**
+   * Apply (or pop) a stash after an explicit, modal confirmation. This is the
+   * first mutating action the extension performs, so the guardrail matters: the
+   * user must confirm, and conflicts are surfaced without being treated as
+   * failures.
+   */
+  private async runStashAction(ref: string, action: StashActionKind): Promise<void> {
+    const cwd = this.resolveCwd();
+    if (!cwd) {
+      return;
+    }
+
+    const verb = action === "pop" ? "Pop" : "Apply";
+    const detail =
+      action === "pop"
+        ? `This applies the changes from ${ref} onto your working tree and removes the stash once it applies cleanly.`
+        : `This merges the changes from ${ref} into your working tree. The stash is kept.`;
+    const confirmed = await vscode.window.showWarningMessage(
+      `${verb} ${ref}?`,
+      { modal: true, detail },
+      verb
+    );
+    if (confirmed !== verb) {
+      return; // User dismissed the dialog: do nothing.
+    }
+
+    this.post({ type: "stashActionRunning", ref, action });
+    try {
+      const result = action === "pop" ? await popStash(ref, cwd) : await applyStash(ref, cwd);
+      this.post({ type: "stashActionResult", result });
+
+      if (result.outcome === "conflict") {
+        void vscode.window.showWarningMessage(
+          `${verb} of ${ref} produced merge conflicts. Resolve them in your working tree.` +
+            (action === "pop" ? " The stash was kept." : "")
+        );
+      } else {
+        void vscode.window.showInformationMessage(
+          action === "pop" ? `Popped ${ref}.` : `Applied ${ref}.`
+        );
+      }
+
+      // The working tree changed, and a successful pop removes the stash, so the
+      // list is now stale — reload it.
+      await this.refreshStashes();
+    } catch (error) {
+      // The webview clears its busy state when it receives the error message.
       this.reportError(error);
     }
   }

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   ExtensionToWebviewMessage,
   GitStashDetails,
-  GitStashEntry
+  GitStashEntry,
+  StashActionKind
 } from "../extension/types/stash";
 import { DiffViewer } from "./components/DiffViewer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -18,6 +19,9 @@ export function App() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [filter, setFilter] = useState("");
+  const [busyAction, setBusyAction] = useState<
+    { ref: string; action: StashActionKind } | undefined
+  >();
 
   useEffect(() => {
     const unsubscribe = onMessage((message: ExtensionToWebviewMessage) => {
@@ -39,10 +43,23 @@ export function App() {
           setDetails(message.payload);
           setDetailsLoading(false);
           break;
+        case "stashActionRunning":
+          setBusyAction({ ref: message.ref, action: message.action });
+          setError(undefined);
+          break;
+        case "stashActionResult":
+          setBusyAction(undefined);
+          // A successful pop removes the stash, so its details no longer exist.
+          if (message.result.action === "pop" && message.result.outcome === "applied") {
+            setSelectedRef(undefined);
+            setDetails(undefined);
+          }
+          break;
         case "error":
           setError(message.message);
           setStashesLoading(false);
           setDetailsLoading(false);
+          setBusyAction(undefined);
           break;
       }
     });
@@ -59,6 +76,14 @@ export function App() {
 
   const handleSelect = (ref: string) => {
     postMessage({ type: "selectStash", ref });
+  };
+
+  const handleApply = (ref: string) => {
+    postMessage({ type: "applyStash", ref });
+  };
+
+  const handlePop = (ref: string) => {
+    postMessage({ type: "popStash", ref });
   };
 
   const filteredStashes = useMemo(() => {
@@ -111,6 +136,11 @@ export function App() {
               stashRef={selectedRef}
               details={details}
               loading={detailsLoading}
+              busyAction={
+                busyAction && busyAction.ref === selectedRef ? busyAction.action : undefined
+              }
+              onApply={handleApply}
+              onPop={handlePop}
             />
             {details && <DiffViewer patch={details.patchRaw} />}
           </ErrorBoundary>

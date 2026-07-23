@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  isMergeConflictOutput,
   isValidStashRef,
   parseStashList,
   parseStashStat
@@ -72,4 +73,21 @@ test("validates stash references", () => {
   assert.ok(isValidStashRef("stash@{12}"));
   assert.ok(!isValidStashRef("stash@{0}; rm -rf /"));
   assert.ok(!isValidStashRef("HEAD"));
+});
+
+test("detects merge-conflict output from apply/pop", () => {
+  const conflict = [
+    "Auto-merging src/App.tsx",
+    "CONFLICT (content): Merge conflict in src/App.tsx"
+  ].join("\n");
+  assert.ok(isMergeConflictOutput(conflict));
+  assert.ok(isMergeConflictOutput("Merge conflict in file.txt"));
+});
+
+test("does not treat a clean or blocked apply as a conflict", () => {
+  assert.ok(!isMergeConflictOutput("Changes were applied to the working tree."));
+  // A genuine blocker: nothing was applied, so it must not read as a conflict.
+  const blocked =
+    "error: Your local changes to the following files would be overwritten by merge:\n\tsrc/App.tsx\nAborting";
+  assert.ok(!isMergeConflictOutput(blocked));
 });

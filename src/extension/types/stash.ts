@@ -66,16 +66,41 @@ export type ParsedDiff = {
   files: DiffFile[];
 };
 
+// Applying a stash to the working tree.
+
+/** Whether a stash is applied and kept (`apply`) or applied and removed (`pop`). */
+export type StashActionKind = "apply" | "pop";
+
+/**
+ * Outcome of an apply/pop:
+ * - "applied"  — the changes went in cleanly.
+ * - "conflict" — the changes were applied but produced merge conflicts. Git
+ *   leaves conflict markers in the working tree and (for `pop`) keeps the stash.
+ */
+export type StashActionOutcome = "applied" | "conflict";
+
+export type StashActionResult = {
+  ref: string;
+  action: StashActionKind;
+  outcome: StashActionOutcome;
+  /** Combined Git stdout/stderr, useful for surfacing conflict details. */
+  output: string;
+};
+
 // Typed message contract between the webview and the extension host.
 
 export type WebviewToExtensionMessage =
   | { type: "ready" }
   | { type: "refreshStashes" }
-  | { type: "selectStash"; ref: string };
+  | { type: "selectStash"; ref: string }
+  | { type: "applyStash"; ref: string }
+  | { type: "popStash"; ref: string };
 
 export type ExtensionToWebviewMessage =
   | { type: "stashesLoading" }
   | { type: "stashesLoaded"; payload: GitStashEntry[] }
   | { type: "stashDetailsLoading"; ref: string }
   | { type: "stashDetailsLoaded"; payload: GitStashDetails }
+  | { type: "stashActionRunning"; ref: string; action: StashActionKind }
+  | { type: "stashActionResult"; result: StashActionResult }
   | { type: "error"; message: string };

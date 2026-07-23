@@ -4,11 +4,10 @@ A visual Git stash inspector for VS Code that helps you find, inspect, and
 understand stashes — including ones created indirectly during commit, merge,
 pull, or rebase flows — without leaving the editor.
 
-This first version is **read-only and safe**: it lists stashes and shows what
-each one contains, but never applies, pops, drops, or otherwise mutates Git
-state.
+Inspection is fully read-only. The one mutating action — applying a stash to
+your working tree — is always opt-in and gated behind an explicit confirmation.
 
-## Features (MVP)
+## Features
 
 - Open from the Command Palette: **Git Stash Manager: Open**.
 - List all stashes in the current workspace (`git stash list`).
@@ -19,6 +18,10 @@ state.
   left and new on the right, and a **Unified** view with both line-number
   gutters. Files are collapsible, with large files guarded so the webview never
   freezes.
+- **Apply** a stash to your working tree (`git stash apply`, keeps the stash) or
+  **Pop** it (`git stash pop`, removes it once it applies cleanly). Both require
+  a confirmation dialog first. Merge conflicts are surfaced clearly — the changes
+  are applied with conflict markers and the stash is kept for `pop`.
 - Refresh, filter, and clear loading/empty/error states.
 
 ## Architecture
@@ -72,6 +75,9 @@ npm run watch:webview     # in another
 
 ## Safety
 
-The MVP performs no destructive Git actions. `apply`, `pop`, `drop`, and `clear`
-are intentionally not implemented and will only be added later behind explicit
-confirmation. See `planning.md` and `ai-spec-kit.md` for the full spec.
+The only actions that touch Git state are **Apply** and **Pop**, and both are
+opt-in: nothing runs until you confirm a modal dialog. Apply is non-destructive
+by nature (it keeps the stash); Pop only removes the stash when it applies
+cleanly, and keeps it whenever a conflict occurs. The more destructive `drop`
+and `clear` are intentionally still not implemented. See `planning.md` and
+`ai-spec-kit.md` for the full spec.
